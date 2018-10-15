@@ -1,4 +1,4 @@
-#!/opt/conda/bin/python
+#!/anaconda3/bin/python
 from abutils.core import sequence
 from abutils.core import pair
 from abutils.utils.alignment import global_alignment, muscle
@@ -6,19 +6,33 @@ from pair_hack import Pair as Pair_hack
 import json
 import sys, os
 
+def munge_description(x):
+    tokens = x.split(" ")
+    num_of_tokens = len(tokens)
+    if num_of_tokens != 3:
+        return dict(cluster_fraction=tokens[0])
+    else:
+        return dict(cluster_fraction=tokens[1], cluster_confidence=tokens[2])
+
 seqs = []
 with open(sys.argv[1]) as f:
     for line in f:
         d = json.loads(line.strip())
+        # Bryan has a pair object
         seq = sequence.Sequence(d)
         seqs.append(seq)
+
+# munge the ids and create a dictionary from which we construct
+# the cellid and the chainAnnotation.
+for s in seqs:
+    s.dictionary = munge_description(str(s['description']))
+    s.fraction = s.dictionary['cluster_fraction'] if 'cluster_fraction' in s.dictionary else 'Unknown'
+    s.confidence = s.dictionary['cluster_confidence'] if 'cluster_confidence' in s.dictionary else 'Unknown'
 
 # order the sequences by their munged id.
 # seqordered = [seq for seq in sorted(seqs, key = lambda x: munge(x.id), reverse = True)]
 seqordered = [seq for seq in sorted(seqs, key=lambda x: x.id, reverse=True)]
 
-# Pair sorted sequences based on munged id.
-# Unpaired sequences aren't exported. Should they be?
 pairs = []
 unpaired = []
 
@@ -31,7 +45,7 @@ while seqordered:
    if(seqordered):
        if(nxt is None):
            nxt = seqordered.pop()
-       if munge(first.id) == munge(nxt.id):
+       if first.id == nxt.id:
            pairs.append(pair.Pair([first,nxt]))
            first = None
            nxt = None
@@ -68,7 +82,6 @@ def schief_csv_output(pairs, output_file, sep=',', legacy_abstar=True):
     for p in sorted(pairs, key=lambda x: _get_name(x)):
         name = _get_name(p)
         line = [name, ]
-        # line += _get_pair_metadata(p)
         line += _schief_output_line(p.heavy, legacy_abstar)
         line += _schief_output_line(p.light, legacy_abstar)
         output.append(sep.join([str(l) for l in line]))
@@ -127,13 +140,13 @@ def _get_alternates(seq, j_gene=False):
 
 
 def _get_schief_output_header(sep):
-    fields = ['Sequence ID', 'Experiment', 'Group', 'Subject', 'Timepoint', 'VH gene', 'VH Alternate:score',
+    fields = ['Sequence ID', 'Heavy Cluster Fraction', 'Heavy Cluster Confidence', 'VH gene', 'VH Alternate:score',
               'DH gene', 'DH Alternate:score', 'JH gene', 'JH Alternate:score',
               'CDR3 length', 'CDR3 nt', 'CDR3 aa',
               'Junction AA', 'Junction NT seq', 'NT muts', 'AA muts', '% VH mutation (NT)', '% FR mutation (NT)',
               '% VH mutation (AA)', '% FR mutation (AA)', 'VRC01-like Mutations', 'VH insertions', 'VH deletions',
               'VDJ AA seq', 'VDJ NT seq', 'Insertion count', 'Insertion lengths:position',
-              'Deletion count', 'Deletion lengths:position', 'VDJ cysteine count', 'CDR3 cysteine count',
+              'Deletion count', 'Deletion lengths:position', 'VDJ cysteine count', 'CDR3 cysteine count', 'Light Cluster Fraction', 'Light Cluster Confidence',
               'VL gene', 'VL Alternate:score', 'JL gene', 'JL Alternate:score', 'CDR3 length', 'CDR3 nt', 'CDR3 aa',
               'Junction AA', 'Junction NT seq', 'NT muts', 'AA muts',
               '% VL mutation (NT)', '% FR mutation (NT)', '% VL mutation (AA)', '% FR mutation (AA)',
@@ -145,14 +158,10 @@ def _get_schief_output_header(sep):
 
 def _schief_output_line(seq, legacy):
     if seq is None:
-        return [''] * 27
+        return [''] * 30
     line = []
-    line.append(seq['experiment'] if 'experiment' in seq else '')
-    line.append(seq['group'] if 'group' in seq else '')
-    line.append(seq.dictionary['ptid'] if 'ptid' in seq.dictionary else '')
-    line.append(seq.dictionary['visit'] if 'visit' in seq.dictionary else '')
-    #    line.append(seq['subject'] if 'subject' in seq else '')
-    #    line.append(seq['timepoint'] if 'timepoint' in seq else '')
+    line.append(seq.fraction)
+    line.append(seq.confidence)
     line.append(seq['v_gene']['gene'])
     line.append(_get_alternates(seq['v_gene']['others'], j_gene=False))
     if seq['chain'] == 'heavy':
