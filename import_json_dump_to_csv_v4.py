@@ -177,8 +177,11 @@ def _schief_output_line(seq, legacy):
     line.append('|'.join(str(i['was']) + str(i['position']) + str(i['is']) for i in seq['var_muts_nt']['muts']) if 'var_muts_nt' in seq else '')
     line.append('|'.join(str(i['was']) + str(i['position']) + str(i['is']) for i in seq['var_muts_aa']['muts']) if 'var_muts_aa' in seq else '')
     if seq['chain'] == 'heavy':
-        line.append('|'.join(str(i['was']) + str(i['position']) + str(i['is']) for i in seq['d_muts_nt']['muts'])  if 'd_muts_nt' in seq else '')
-        line.append('|'.join(str(i['was']) + str(i['position']) + str(i['is']) for i in seq['d_muts_aa']['muts'])  if 'd_muts_aa' in seq else '')
+        line.append('Data Not Available')
+        line.append('Data Not Available')
+        # D Mutations are currently not avaialbe in Abstar
+        # line.append('|'.join(str(i['was']) + str(i['position']) + str(i['is']) for i in seq['d_muts_nt']['muts'])  if 'd_muts_nt' in seq else '')
+        # line.append('|'.join(str(i['was']) + str(i['position']) + str(i['is']) for i in seq['d_muts_aa']['muts'])  if 'd_muts_aa' in seq else '')
     line.append('|'.join(str(i['was']) + str(i['position']) + str(i['is']) for i in seq['join_muts_nt']['muts']) if 'join_muts_nt' in seq else '')
     line.append('|'.join(str(i['was']) + str(i['position']) + str(i['is']) for i in seq['join_muts_aa']['muts']) if 'join_muts_aa' in seq else '')
     line.append(100. - seq['nt_identity']['v'])
