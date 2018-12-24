@@ -174,9 +174,9 @@ def _schief_output_line(seq, legacy):
         line.append(_get_alternates(seq['d_gene']['others'], j_gene=False) if 'd_gene' in seq else '')
     line.append(seq['j_gene']['gene'])
     line.append(_get_alternates(seq['j_gene']['others'], j_gene=True))
-    line.append(seq['cdr3_len'])
-    line.append(seq['cdr3_nt'].upper())
-    line.append(seq['cdr3_aa'].upper())
+    line.append(seq['cdr3_len'] if 'cdr3_len' in seq else '')
+    line.append(seq['cdr3_nt'].upper() if 'cdr3_nt' in seq else '')
+    line.append(seq['cdr3_aa'].upper() if 'cdr3_aa' in seq else '')
     line.append(seq['junc_aa'])
     line.append(seq['junc_nt'])
     line.append('|'.join(str(i['was']) + str(i['position']) + str(i['is']) for i in seq['var_muts_nt']['muts']) if 'var_muts_nt' in seq else '')
@@ -219,8 +219,8 @@ def _schief_output_line(seq, legacy):
     else:
         line.append('0')
         line.append('')
-    line.append(seq['vdj_aa'].upper().count('C'))
-    line.append(seq['cdr3_aa'].upper().count('C'))
+    line.append(seq['vdj_aa'].upper().count('C') if 'vdj_aa' in seq else '')
+    line.append(seq['cdr3_aa'].upper().count('C') if 'cdr3_aa' in seq else '')
     return line
 
 
