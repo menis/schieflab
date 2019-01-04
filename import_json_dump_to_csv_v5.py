@@ -87,6 +87,7 @@ def schief_csv_output(pairs, output_file, sep=',', legacy_abstar=True):
     for p in sorted(pairs, key=lambda x: _get_name(x)):
         name = _get_name(p)
         line = [name, ]
+        line += _get_pair_metadata(p)
         line += _schief_output_line(p.heavy, legacy_abstar)
         line += _schief_output_line(p.light, legacy_abstar)
         output.append(sep.join([str(l) for l in line]))
@@ -113,12 +114,6 @@ def _get_pair_metadata(p):
     group = seq.get('group', '')
     subject = seq.get('subject', '')
     timepoint = seq.get('timepoint', '')
-    experiment = seq['experiment'] if 'experiment' in seq else ''
-    group = seq['group'] if 'group' in seq else ''
-    subject = seq['subject'] if 'subject' in seq else subject
-    timepoint = seq['timepoint'] if 'timepoint' in seq else subject
-    subject = seq.dictionary['ptid'] if 'ptid' in seq.dictionary else subject
-    timepoint = seq.dictionary['visit'] if 'visit' in seq.dictionary else timepoint
     return [experiment, group, subject, timepoint]
 
 
@@ -145,7 +140,7 @@ def _get_alternates(seq, j_gene=False):
 
 
 def _get_schief_output_header(sep):
-    fields = ['Sequence ID', 'Heavy Cluster Fraction', 'Heavy Cluster Confidence', 'VH gene', 'VH Alternate:score',
+    fields = ['Sequence ID', 'Experiment', 'Group', 'Subject', 'Timepoint', 'Heavy Cluster Fraction', 'Heavy Cluster Confidence', 'VH gene', 'VH Alternate:score',
               'DH gene', 'DH Alternate:score', 'JH gene', 'JH Alternate:score',
               'CDR3 length', 'CDR3 nt', 'CDR3 aa',
               'Junction AA', 'Junction NT seq', 'V NT muts', 'V AA muts', 'D NT muts', 'D AA muts', 'J NT muts', 'J AA muts',  '% VH mutation (NT)', '% FR mutation (NT)',
