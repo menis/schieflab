@@ -1,4 +1,4 @@
-#!/anaconda3/bin/python
+#!/usr/bin/python3
 
 import sys
 
@@ -6,8 +6,9 @@ remap = {}
 with open(sys.argv[2]) as haystack:
     for line in haystack:
         parts = line.strip().split()
-        if len(parts) > 2:
-            remap[parts[0]] = parts[2]
+        if len(parts) >= 2:
+            remap[parts[0]] = parts[1]
+
 
 with open(sys.argv[1]) as needle:
     for line in needle:
