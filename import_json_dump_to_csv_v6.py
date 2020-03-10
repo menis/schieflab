@@ -34,6 +34,8 @@ seqs = []
 basename = os.path.splitext(os.path.basename(sys.argv[1]))[0]
 with open(sys.argv[1]) as f:
     for line in f:
+        if line.strip() == "":
+            continue
         d = json.loads(line.strip())
         # Bryan has a pair object
         seq = sequence.Sequence(d)
@@ -43,6 +45,15 @@ force_all_heavy_as_vrc01class = False
 if(len(sys.argv) > 2):
     if sys.argv[2] == "forcevrc01":
         force_all_heavy_as_vrc01class = True
+
+colortouse = '#45bc70'
+if(len(sys.argv) > 3):
+    if sys.argv[3] == "orange":
+        colortouse = '#f99248'
+    else:
+        colortouse = str(sys.argv[3]).strip()
+
+
 
 # munge the ids and create a dictionary from which we construct
 # the cellid and the chainAnnotation.
@@ -509,7 +520,7 @@ total_muts.extend(tot)
 ## Print graphs
 
 # minval=0.05 ensures that the lightest boxes are still distinguishable from background
-cmap = color.truncate_colormap(color.cmap_from_color('#45bc70'), minval=0.05)
+cmap = color.truncate_colormap(color.cmap_from_color(colortouse), minval=0.05)
 
 # plot the frequency of VRC01-class mutation in the GT8 immunization group
 f, ax = plt.subplots()
