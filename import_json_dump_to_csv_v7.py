@@ -568,7 +568,8 @@ cmap = color.truncate_colormap(color.cmap_from_color(colortouse), minval=0.05)
 
 # plot the frequency of VRC01-class mutation in the GT8 immunization group
 f, ax = plt.subplots()
-plots.shared_mutation_2dhist(total_muts, total_vrc01_mut, cmap, ax, show_values=False)
+if(len(total_muts) > 0 and len(total_vrc01_mut) > 0):
+ plots.shared_mutation_2dhist(total_muts, total_vrc01_mut, cmap, ax, show_values=False)
 
 # plot the frequency of random VRC01-class mutation, with 95% CIs
 plots.fill_between_steps(ax, rand_xs, ci_max, ci_min)
@@ -589,7 +590,8 @@ plt.savefig("./"+basename+"_vrc01countplot_"+date.today().strftime("%d%B%Y")+".s
 schief_csv_output(pairs+unpaired, "./"+basename+"_paired_and_unpaired_"+date.today().strftime("%d%B%Y")+".csv", sep=",", legacy_abstar=False)
 
 cmap = ListedColormap(['#F5F5F5', '#080808', '#0DABE6', '#0DABE6'])
-plots.pixel_plot(np.asarray(mut_positions),
+if(len(mut_positions) > 0):
+    plots.pixel_plot(np.asarray(mut_positions),
                  cmap, figfile="./"+basename+"_mutationdistribution_"+date.today().strftime("%d%B%Y")+".pdf"
                 )
 
