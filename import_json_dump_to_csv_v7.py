@@ -1,4 +1,4 @@
-#!/anaconda3/bin/python
+#!/usr/bin/python3
 from abutils.core import sequence
 from abutils.core import pair
 from abutils.utils.alignment import global_alignment, muscle

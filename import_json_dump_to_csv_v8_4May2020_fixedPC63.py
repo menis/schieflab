@@ -1,4 +1,4 @@
-#!/anaconda3/bin/python
+#!/usr/bin/python3
 from abutils.core import sequence
 from abutils.core import pair
 from abutils.utils.alignment import global_alignment, muscle
@@ -42,18 +42,28 @@ with open(sys.argv[1]) as f:
         seqs.append(seq)
 
 force_all_heavy_as_vrc01class = False
+blankrun = False
 if(len(sys.argv) > 2):
     if sys.argv[2] == "forcevrc01":
         force_all_heavy_as_vrc01class = True
+    elif sys.argv[2] == "blankrun":
+        blankrun = True
 
 colortouse = '#45bc70'
 if(len(sys.argv) > 3):
     if sys.argv[3] == "orange":
         colortouse = '#f99248'
+    elif sys.argv[3] == "green":
+        colortouse = '#45bc70'
     else:
         colortouse = str(sys.argv[3]).strip()
 
-
+expanded = False
+tag = ""
+if(len(sys.argv) > 4):
+    if sys.argv[4] == "expanded":
+        expanded = True
+        tag = "_expanded"
 
 # munge the ids and create a dictionary from which we construct
 # the cellid and the chainAnnotation.
@@ -116,6 +126,7 @@ def make_dir(d):
 def schief_csv_output(pairs, output_file, sep=',', legacy_abstar=True):
     shared = []
     total = []
+    mutationpositions = []
     make_dir(os.path.dirname(output_file))
     header = _get_schief_output_header(sep)
     output = [header, ]
@@ -130,11 +141,11 @@ def schief_csv_output(pairs, output_file, sep=',', legacy_abstar=True):
             hp = Pair_hack([p.heavy])
             if hp.vrc01_like and force_all_heavy_as_vrc01class:
                 vrc01class = True
-        line += _schief_output_line(p.heavy, legacy_abstar, vrc01class, shared, total)
+        line += _schief_output_line(p.heavy, legacy_abstar, vrc01class, shared, total, mutationpositions)
         line += _schief_output_line(p.light, legacy_abstar)
         output.append(sep.join([str(l) for l in line]))
     open(output_file, 'w').write('\n'.join(output))
-    return shared, total
+    return shared, total, mutationpositions
 
 
 def _get_name(p):
@@ -199,7 +210,7 @@ def _get_schief_output_header(sep):
     return sep.join(fields)
 
 
-def _schief_output_line(seq, legacy, pairisvrc01class=False, s=None, t=None):
+def _schief_output_line(seq, legacy, pairisvrc01class=False, s=None, t=None, m=None):
     if seq is None:
         return [''] * 34
     line = []
@@ -239,8 +250,10 @@ def _schief_output_line(seq, legacy, pairisvrc01class=False, s=None, t=None):
             trimmed['seq_id'] = name
             trimmed['vdj_aa'] = justvgene
             vrc01_class, total = vrc01_class_mutation_count([trimmed], vgene_only=True)
+            muts = vrc01_class_mutation_positions([trimmed], vgene_only=True)
             s.extend(vrc01_class)
             t.extend(total)
+            m.extend(muts)
             line.append(vrc01_class[0])
         else:
             line.append('')
@@ -280,7 +293,11 @@ def vrc01_class_mutation_count(seqs, vgene_only=True):
     total = []
 
     # get VRC01-class sequences
-    vrc01_seqs = get_vrc01_class_sequences(vgene_only=vgene_only)
+    if(not expanded):
+        vrc01_seqs = get_vrc01_class_sequences(vgene_only=vgene_only)
+    else:
+        vrc01_seqs = get_expanded_vrc01_class_sequences(vgene_only=vgene_only)
+
     vrc01_names = [s.id for s in vrc01_seqs]
 
     # get glVRC01 sequence
@@ -332,6 +349,47 @@ def vrc01_class_mutation_count(seqs, vgene_only=True):
         # print("Seq: "+str(aln_seq.id)+" Total: "+str(_total)+", Shared: "+str(any_shared))
     return shared, total
 
+def vrc01_class_mutation_positions(seqs, vgene_only=True):
+    data = []
+    input_seqs = [sequence.Sequence([s['seq_id'], s['vdj_aa']]) for s in seqs]
+    input_names = [s.id for s in input_seqs]
+    # get VRC01-class sequences
+    if(not expanded):
+        hiv_seqs = get_vrc01_class_sequences()
+    else:
+        hiv_seqs = get_expanded_vrc01_class_sequences()
+
+    all_hiv_names = [s.id for s in hiv_seqs]
+    # MSA
+    seqs_for_alignment = input_seqs + hiv_seqs
+    seqs_for_alignment.append(get_vrc01_germline_sequence(vgene_only=vgene_only))
+    aln = muscle(seqs_for_alignment)
+    aln_seqs = [seq for seq in aln if seq.id in input_names]
+    aln_gl = [seq for seq in aln if seq.id == 'glVRC01'][0]
+    aln_mins = [seq for seq in aln if seq.id in ['minVRC01', 'min12A21']]
+    aln_hiv = [seq for seq in aln if seq.id in all_hiv_names]
+    for seq in aln_seqs:
+        seq_data = []
+        for i, (s, g) in enumerate(zip(str(seq.seq), str(aln_gl.seq))):
+            # if g == '-' and s == '-':
+            if g == '-':
+                continue
+            min_residues = [seq[i] for seq in aln_mins]
+            vrc01_residues = [seq[i] for seq in aln_hiv]
+            if s == '-':
+                seq_data.append(0)
+            elif s == g:
+                seq_data.append(0)
+            elif s != g and s in min_residues:
+                seq_data.append(2)
+            elif s != g and s in vrc01_residues:
+                seq_data.append(3)
+            elif s != g and s not in vrc01_residues:
+                seq_data.append(1)
+            else:
+                seq_data.append(0)
+        data.append(np.asarray(seq_data))
+    return np.asarray(data)
 
 def get_vrc01_class_sequences(chain='heavy', vgene_only=True, only_include=None):
     if vgene_only:
@@ -370,41 +428,21 @@ def get_vrc01_class_sequences(chain='heavy', vgene_only=True, only_include=None)
     return [sequence.Sequence(s) for s in seqs]
 
 def get_expanded_vrc01_class_sequences(chain='heavy', vgene_only=True, only_include=None):
-    if vgene_only:
-        heavy = [('VRC01', 'QVQLVQSGGQMKKPGESMRISCRASGYEFIDCTLNWIRLAPGKRPEWMGWLKPRGGAVNYARPLQGRVTMTRDVYSDTAFLELRSLTVDDTAVYFCTR'),
-                 ('PGV04', 'QVQLVQSGSGVKKPGASVRVSCWTSEDIFERTELIHWVRQAPGQGLEWIGWVKTVTGAVNFGSPDFRQRVSLTRDRDLFTAHMDIRGLTQGDTATYFCAR'),
-                 ('VRC-CH31', 'QVQLVQSGAAVRKPGASVTVSCKFAEDDDYSPYWVNPAPEHFIHFLRQAPGQQLEWLAWMNPTNGAVNYAWYLNGRVTATRDRSMTTAFLEVKSLRSDDTAVYYCAR'),
-                 ('3BNC60', 'QVHLSQSGAAVTKPGASVRVSCEASGYKISDHFIHWWRQAPGQGLQWVGWINPKTGQPNNPRQFQGRVSLTRQASWDFDTYSFYMDLKAVRSDDTAIYFCAR'),
-                 ('12A12', 'HLVQSGTQVKKPGASVRISCQASGYSFTDYVLHWWRQAPGQGLEWMGWIKPVYGARNYARRFQGRINFDRDIYREIAFMDLSGLRSDDTALYFCAR'),
-                 ('PGV20', 'QVHLMQSGTEMKKPGASVRVTCQTSGYTFSDYFIHWLRQVPGRGFEWMGWMNPQWGQVNYARTFQGRVTMTRDVYREVAYLDLRSLTFADTAVYFCAR'),
-                 ('3BNC117', 'QVQLLQSGAAVTKPGASVRVSCEASGYNIRDYFIHWWRQAPGQGLQWVGWINPKTGQPNNPRQFQGRVSLTRHASWDFDTFSFYMDLKALRSDDTAVYFCAR'),
-                 ('12A21','SQHLVQSGTQVKKPGASVRVSCQASGYTFTNYILHWWRQAPGQGLEWMGLIKPVFGAVNYARQFQGRIQLTRDIYREIAFLDLSGLRSDDTAVYYCAR'),
-                 ('C38-VRC18.02','EVRLVQSGNQVRKPGASVRISCEASGYKFIDHFIHWVRQVPGHGLEWLGWINPRGGGVNYSRSFQGKLSMTMTRDNFEETAYLDLSKLNPGDTAVYFCAR'),
-                 ('N6','RAHLVQSGTAMKKPGASVRVSCQTSGYTFTAHILFWFRQAPGRGLEWVGWIKPQYGAVNFGGGFRDRVTLTRDVYREIAYMDIRGLKPDDTAVYYCAR'),
-                 ('N49P7','ADLVQSGAVVKKPGDSVRISCEAQGYRFPDYIIHWIRRAPGQGPEWMGWMNPMGGQVNIPWKFQGRVSMTRDTSIETAFLDLRGLKSDDTAVYYCVR'),
-                 ('N60P25.1','HVQLVQSGTEVKRPGASVRISCASSGYTFSNYFIHWVRQAPGRGLEWMGWMNPLRGAVNYSGKFQGRVTMTRDIYTETSFMVLSGLRSDDTAIYFCAR'),
-                 ('NIH45-46','QVRLSQSGGQMKKPGESMRLSCRASGYEFLNCPINWIRLAPGRRPEWMGWLKPRGGAVNYARKFQGRVTMTRDVYSDTAFLELRSLTSDDTAVYFCTR'),
-                 ('PCIN63-71I','QVQLVQSGVAVKKPGASVWVSCKASGYTFTSCYIHWFRQAPGQGLEWMGWLNPINGARNNPYQFQGRISLTRDTSSETAYLELRNLRSDDTAVYYCAR'),
-                 ('VRC02','QVQLVQSGGQMKKPGESMRISCQASGYEFIDCTLNWVRLAPGRRPEWMGWLKPRGGAVNYARPLQGRVTMTRDVYSDTAFLELRSLTADDTAVYYCTR'),
-                 ('VRC07','QVRLSQSGGQMKKPGDSMRISCRASGYEFINCPINWIRLAPGKRPEWMGWMKPRGGAVSYARQLQGRVTMTRDMYSETAFLELRSLTSDDTAVYFCTR'),
-                 ('VRC08','QVQLVQSGTQMKEPGASVTISCVTSGYEFVEILINWVRQVPGRGLEWMGWMNPRGGGVNYARQFQGKVTMTRDVYRDTAYLTLSGLTSGDTAKYFCVR'),
-                 ('VRC27','SQRLVQSGPQVRKPGSSVRISCETSGYTFNAYILHWFRQAPGRSFEWMGWIKPKFGAVNYAHSFQGRITLTRDIYRETAFLDLTGLRFDDTAVYYCAR'),
-                 ('VRC-PG19','EVRLVQSGAEVKKPGASVRVSCAASGYTFTDFDIHWLRQAPGRGLEWMGWVRPLGGGVSYARQFQGRVTMTRDFYIDTAFMDFRNLKMDDTALYFCAR')]
-        light = []
-    else:
-        heavy = [('VRC01', 'QVQLVQSGGQMKKPGESMRISCRASGYEFIDCTLNWIRLAPGKRPEWMGWLKPRGGAVNYARPLQGRVTMTRDVYSDTAFLELRSLTVDDTAVYFCTRGKNCDYNWDFEHWGRGTPVIVSS'),
-                 ('PGV04', 'QVQLVQSGSGVKKPGASVRVSCWTSEDIFERTELIHWVRQAPGQGLEWIGWVKTVTGAVNFGSPDFRQRVSLTRDRDLFTAHMDIRGLTQGDTATYFCARQKFYTGGQGWYFDLWGRGTLIVVSS'),
-                 ('VRC-CH31', 'QVQLVQSGAAVRKPGASVTVSCKFAEDDDYSPYWVNPAPEHFIHFLRQAPGQQLEWLAWMNPTNGAVNYAWYLNGRVTATRDRSMTTAFLEVKSLRSDDTAVYYCARAQKRGRSEWAYAHWGQGTPVVVSS'),
-                 ('3BNC60', 'QVHLSQSGAAVTKPGASVRVSCEASGYKISDHFIHWWRQAPGQGLQWVGWINPKTGQPNNPRQFQGRVSLTRQASWDFDTYSFYMDLKAVRSDDTAIYFCARQRSDFWDFDVWGSGTQVTVSS'),
-                 ('12A12', 'HLVQSGTQVKKPGASVRISCQASGYSFTDYVLHWWRQAPGQGLEWMGWIKPVYGARNYARRFQGRINFDRDIYREIAFMDLSGLRSDDTALYFCARDGSGDDTSWHLDPWGQGTLVIVSA'),
-                 ('PGV20', 'QVHLMQSGTEMKKPGASVRVTCQTSGYTFSDYFIHWLRQVPGRGFEWMGWMNPQWGQVNYARTFQGRVTMTRDVYREVAYLDLRSLTFADTAVYFCARRMRSQDREWDFQHWGQGTRIIVSS')]
-        light = []
+    heavy = [('VRC01', 'QVQLVQSGGQMKKPGESMRISCRASGYEFIDCTLNWIRLAPGKRPEWMGWLKPRGGAVNYARPLQGRVTMTRDVYSDTAFLELRSLTVDDTAVYFCTR'),
+             ('PGV04', 'QVQLVQSGSGVKKPGASVRVSCWTSEDIFERTELIHWVRQAPGQGLEWIGWVKTVTGAVNFGSPDFRQRVSLTRDRDLFTAHMDIRGLTQGDTATYFCAR'),
+             ('VRC-CH31', 'QVQLVQSGAAVRKPGASVTVSCKFAEDDDYSPYWVNPAPEHFIHFLRQAPGQQLEWLAWMNPTNGAVNYAWYLNGRVTATRDRSMTTAFLEVKSLRSDDTAVYYCAR'),
+             ('3BNC60', 'QVHLSQSGAAVTKPGASVRVSCEASGYKISDHFIHWWRQAPGQGLQWVGWINPKTGQPNNPRQFQGRVSLTRQASWDFDTYSFYMDLKAVRSDDTAIYFCAR'),
+             ('12A12', 'HLVQSGTQVKKPGASVRISCQASGYSFTDYVLHWWRQAPGQGLEWMGWIKPVYGARNYARRFQGRINFDRDIYREIAFMDLSGLRSDDTALYFCAR'),
+             ('PGV20', 'QVHLMQSGTEMKKPGASVRVTCQTSGYTFSDYFIHWLRQVPGRGFEWMGWMNPQWGQVNYARTFQGRVTMTRDVYREVAYLDLRSLTFADTAVYFCAR'),
+             ('PCIN63-71Ja','QVQLVQSGAEVKKPGASVRVSCKASGYTFNSCLIHWWRQAPGQGLQWMAWINPLHGAVNYAHQFQGRITVTRDTSIDTAYMELRGLRSDDTATYYCTR')]
+    light = []
+
     seqs = heavy if chain == 'heavy' else light
     if only_include is not None:
         if type(only_include) in [str, unicode]:
             only_include = [only_include, ]
         seqs = [s for s in seqs if s[0] in only_include]
-    return [Sequence(s) for s in seqs]
+    return [sequence.Sequence(s) for s in seqs]
 
 def _get_mutations(seqs, standard):
     mutations = []
@@ -415,7 +453,11 @@ def _get_mutations(seqs, standard):
     return mutations
 
 def get_vrc01_class_mutations():
-    vrc01_class = [s.sequence for s in get_vrc01_class_sequences()]
+
+    if(not expanded):
+        vrc01_class = [s.sequence for s in get_vrc01_class_sequences()]
+    else:
+        vrc01_class = [s.sequence for s in get_expanded_vrc01_class_sequences()]
     glvrc01 = get_vrc01_germline_sequence().sequence
     return list(set(_get_mutations(vrc01_class, glvrc01)))
 
@@ -476,7 +518,7 @@ with open('/Users/menis/src/schieflabscripts/schieflab/synthetic_antibodies/d647
         d6471_mutations.append(line.strip().split())
 
 # combine synthetic mutations from both donors
-synth_mutations = d5684_mutations + d6471_mutations
+#synth_mutations = d5684_mutations + d6471_mutations
 
 mean = [0, ]
 ci_min = [0, ]
@@ -486,18 +528,39 @@ ci_max = [0, ]
 # then the first two, etc...
 for i in range(1, 21):
     vrc01_class = []
-    for sm in synth_mutations:
+
+    #need to split this out to know which mutations come from where
+    for sm in d5684_mutations:
         # only sample sequences that have at least i mutations
         if len(sm) < i:
             continue
-        vrc01_class.append(sum([m in vrc01_class_mutations for m in sm[:i]]))
+        mutsfound = sum([m in vrc01_class_mutations for m in sm[:i]])
+        vrc01_class.append(mutsfound)
+        if(blankrun):
+            print("d5684", i, mutsfound)
+
+    for sm in d6471_mutations:
+        # only sample sequences that have at least i mutations
+        if len(sm) < i:
+            continue
+        mutsfound = sum([m in vrc01_class_mutations for m in sm[:i]])
+        vrc01_class.append(mutsfound)
+        if (blankrun):
+            print("d6471", i, mutsfound)
+
+
     # calculate the mean and 95% CI for the frequency of VRC01-class mutations
+
     n, min_max, _mean, var, skew, kurt = stats.describe(vrc01_class)
     std = np.sqrt(var)
     _ci_min, _ci_max = stats.norm.interval(0.95, loc=_mean, scale=std / np.sqrt(len(vrc01_class)))
     mean.append(_mean)
     ci_min.append(_ci_min)
     ci_max.append(_ci_max)
+
+if(blankrun):
+    #don't need to continue with the rest
+    sys.exit()
 
 # in order to center the squares in our 2D histogram, we need to offset
 # each datapoint by 0.5
@@ -508,14 +571,18 @@ ci_max = [c + 0.5 for c in ci_max]
 
 total_vrc01_mut = []
 total_muts = []
+mut_positions = []
 
-vr, tot = schief_csv_output(pairs, "./"+basename+"_pairs_"+date.today().strftime("%d%B%Y")+".csv", sep=',', legacy_abstar=False)
+vr, tot, mu = schief_csv_output(pairs, "./"+basename+"_pairs_"+date.today().strftime("%d%B%Y")+tag+".csv", sep=',', legacy_abstar=False)
 total_vrc01_mut.extend(vr)
 total_muts.extend(tot)
+mut_positions.extend(mu)
 
-vr, tot = schief_csv_output(unpaired, "./"+basename+"_unpaired_"+date.today().strftime("%d%B%Y")+".csv", sep=",", legacy_abstar=False)
+# Note that if force_all_heavy_as_vrc01class is not enabled the vr and tot counts will be zero for unpaired chains
+vr, tot, mu = schief_csv_output(unpaired, "./"+basename+"_unpaired_"+date.today().strftime("%d%B%Y")+tag+".csv", sep=",", legacy_abstar=False)
 total_vrc01_mut.extend(vr)
 total_muts.extend(tot)
+mut_positions.extend(mu)
 
 ## Print graphs
 
@@ -524,7 +591,8 @@ cmap = color.truncate_colormap(color.cmap_from_color(colortouse), minval=0.05)
 
 # plot the frequency of VRC01-class mutation in the GT8 immunization group
 f, ax = plt.subplots()
-plots.shared_mutation_2dhist(total_muts, total_vrc01_mut, cmap, ax, show_values=False)
+if(len(total_muts) > 0 and len(total_vrc01_mut) > 0):
+ plots.shared_mutation_2dhist(total_muts, total_vrc01_mut, cmap, ax, show_values=False)
 
 # plot the frequency of random VRC01-class mutation, with 95% CIs
 plots.fill_between_steps(ax, rand_xs, ci_max, ci_min)
@@ -538,9 +606,15 @@ plt.gca().add_patch(t)
 
 
 plt.tight_layout()
-plt.savefig("./"+basename+"_vrc01countplot_"+date.today().strftime("%d%B%Y")+".pdf")
-plt.savefig("./"+basename+"_vrc01countplot_"+date.today().strftime("%d%B%Y")+".svg")
+plt.savefig("./"+basename+"_vrc01countplot_"+date.today().strftime("%d%B%Y")+tag+".pdf")
+plt.savefig("./"+basename+"_vrc01countplot_"+date.today().strftime("%d%B%Y")+tag+".svg")
 
 
-schief_csv_output(pairs+unpaired, "./"+basename+"_paired_and_unpaired_"+date.today().strftime("%d%B%Y")+".csv", sep=",", legacy_abstar=False)
+schief_csv_output(pairs+unpaired, "./"+basename+"_paired_and_unpaired_"+date.today().strftime("%d%B%Y")+tag+".csv", sep=",", legacy_abstar=False)
+
+cmap = ListedColormap(['#F5F5F5', '#080808', '#0DABE6', '#0DABE6'])
+if(len(mut_positions) > 0):
+    plots.pixel_plot(np.asarray(mut_positions),
+                 cmap, figfile="./"+basename+"_mutationdistribution_"+date.today().strftime("%d%B%Y")+tag+".pdf"
+                )
 
