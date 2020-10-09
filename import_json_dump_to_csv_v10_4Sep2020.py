@@ -21,13 +21,15 @@ import plots
 from Bio.Seq import Seq
 from Bio.Alphabet import generic_dna
 from Bio import Align
+
+from collections import OrderedDict
 ###
 
 # Globals
+VH12 = 'IGHV1-2'
 VK320 = 'IGKV3-20'
 VK133 = 'IGKV1-33'
 VL214 = 'IGLV2-14'
-
 
 def munge_description(x):
     tokens = x.split(" ")
@@ -79,6 +81,74 @@ if '-expanded' in sys.argv:
 species = 'human'
 if '-species' in sys.argv:
     species = sys.argv[sys.argv.index('-species') + 1]
+
+# Residue masks to include in VRC01-class mutation counting
+vh12mask = False
+vk320mask = False
+vk133mask = False
+vl214mask = False
+masks = OrderedDict()
+if '-mask' in sys.argv:
+    maskfile = sys.argv[sys.argv.index('-mask') + 1]
+    with open(maskfile) as f:
+        startfound = False
+        currentchain = ""
+        currentdict = OrderedDict()
+        position = 1
+        for line in f:
+            l = line.strip()
+            if l == "":
+                continue
+            elif l.split()[0] == "chain":
+                if startfound:
+                    # found a new chain, save the current dict into the masks
+                    masks[currentchain] = currentdict
+                    currentdict = OrderedDict()
+                    currentchain = l.split()[1]
+                    position = 1
+                else:
+                    # found a new chain but this is the first one, reset the dict just in case
+                    # and note the chain
+                    currentdict = OrderedDict()
+                    currentchain = l.split()[1]
+                    startfound = True
+            else:
+                # all lines should be int he form of "Q yes" or "Q no". exit if anything else
+                lineparts = l.split()
+                shoudlidie = False
+                errorstring = ""
+
+                if len(lineparts) != 2:
+                    shoudlidie = True
+                    errorstring += " More than two items per line;"
+                else:
+                    if len(lineparts[0]) > 1:
+                        shoudlidie = True
+                        errorstring += " First part should be a single character aa code;"
+                    if lineparts[1] not in ("yes", "no"):
+                        shoudlidie = True
+                        errorstring += " Second part should be a yes or no;"
+
+                if shoudlidie:
+                    exit("ERROR in the mask file. Line: " + l + errorstring)
+                else:
+                    currentdict[position] = lineparts[1]
+                    position += 1
+        # If there is still something in the dict at the end that means we need to store the last chain
+        # before moving on
+        if len(currentdict) != 0:
+            masks[currentchain] = currentdict
+            currentdict = OrderedDict()
+
+        # Set the flags
+        if VH12 in masks:
+            vh12mask = True
+        if VK320 in masks:
+            vk320mask = True
+        if VK133 in masks:
+            vk133mask = True
+        if VL214 in masks:
+            vl214mask = True
 
 # munge the ids and create a dictionary from which we construct
 # the cellid and the chainAnnotation.
@@ -319,9 +389,25 @@ def vrc01_class_mutation_count(seqs, vgene_only=True):
     # get glVRC01 sequence
     glvrc01 = get_vrc01_germline_sequence(vgene_only=vgene_only)
 
-    return identifyvrc01muts(input_seqs, vrc01_seqs, glvrc01)
+    return identifyvrc01muts(input_seqs, vrc01_seqs, glvrc01, VH12)
 
-def identifyvrc01muts(input_seqs, vrc01_seqs, glvrc01):
+def get_mask_string(germline, maskforthischain):
+    position = 1
+    mstring = ""
+    for c in germline:
+        if c == '-':
+            mstring += "0"
+        else:
+            if maskforthischain[position] == "yes":
+                mstring += "1"
+            else:
+                mstring += "0"
+            position += 1
+
+    return mstring
+
+
+def identifyvrc01muts(input_seqs, vrc01_seqs, glvrc01, genecall):
     import re
     regex = re.compile("[a-zA-Z]")
 
@@ -347,6 +433,22 @@ def identifyvrc01muts(input_seqs, vrc01_seqs, glvrc01):
             for p in aln_vrc01s:
                 p.seq = p.seq[index[0]:(index[-1]+1)]
 
+        # If there is a VH12 Mask. Generate a mask string 1 for include and 0 otherwise
+        chainmaskstring = "x" * len(aln_gl.seq)
+        usemask = False
+        if genecall == VH12 and vh12mask:
+            chainmaskstring = get_mask_string(aln_gl.seq, masks[VH12])
+            usemask = True
+        elif genecall == VK320 and vk320mask:
+            chainmaskstring = get_mask_string(aln_gl.seq, masks[VK320])
+            usemask = True
+        elif genecall == VK133 and vk133mask:
+            chainmaskstring = get_mask_string(aln_gl.seq, masks[VK133])
+            usemask = True
+        elif genecall == VL214 and vl214mask:
+            chainmaskstring = get_mask_string(aln_gl.seq, masks[VL214])
+            usemask = True
+
         # Count mutations
         _total = sum([_s != g for _s, g in zip(str(aln_seq.seq), str(aln_gl.seq)) if g != '-'])
 
@@ -354,11 +456,17 @@ def identifyvrc01muts(input_seqs, vrc01_seqs, glvrc01):
         all_shared = {}
         for vrc01 in aln_vrc01s:
             _shared = []
-            for q, g, v in zip(str(aln_seq.seq), str(aln_gl.seq), str(vrc01.seq)):
+            for q, g, v, cmask in zip(str(aln_seq.seq), str(aln_gl.seq), str(vrc01.seq), str(chainmaskstring)):
                 if g == '-' and v == '-':
                     _shared.append(False)
                 elif q == v and q != g:
-                    _shared.append(True)
+                    if not usemask:
+                        _shared.append(True)
+                    else:
+                        if cmask == "1":
+                            _shared.append(True)
+                        else:
+                            _shared.append(False)
                 else:
                     _shared.append(False)
             all_shared[vrc01.id] = _shared
@@ -386,7 +494,7 @@ def vrc01_class_mutation_count_light_chain(seqs, vgene_only=True, vgene=VK320):
     # get glVRC01 sequence
     glvrc01 = get_vrc01class_germline_lights(vgene)
 
-    return identifyvrc01muts(input_seqs, vrc01_seqs, glvrc01)
+    return identifyvrc01muts(input_seqs, vrc01_seqs, glvrc01, vgene)
 
 def pickclosestvgene(seq, species='human', assignment=VK320):
     if species == 'human':
