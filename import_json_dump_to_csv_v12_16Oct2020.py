@@ -617,7 +617,7 @@ def get_vrc01_class_sequences(chain='heavy', vgene_only=True, only_include=None)
         seqs = vk1_33_light
     elif chain == VL214:
         seqs = vl2_14_light
-    elif chian == VK15:
+    elif chain == VK15:
         seqs = vk1_5_light
     else:
         seqs = light
