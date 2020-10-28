@@ -232,7 +232,7 @@ def schief_csv_output(pairs, output_file, sep=',', legacy_abstar=True):
             if hp.vrc01_like and force_all_heavy_as_vrc01class:
                 vrc01class = True
         line += _schief_output_line(p.heavy, legacy_abstar, vrc01class, shared, total, mutationpositions)
-        line += _schief_output_line(p.light, legacy_abstar, vrc01class)
+        line += _schief_output_line(p.light, legacy_abstar, vrc01class, ch="light")
         output.append(sep.join([str(l) for l in line]))
     open(output_file, 'w').write('\n'.join(output))
     return shared, total, mutationpositions
@@ -300,9 +300,12 @@ def _get_schief_output_header(sep):
     return sep.join(fields)
 
 
-def _schief_output_line(seq, legacy, pairisvrc01class=False, s=None, t=None, m=None):
+def _schief_output_line(seq, legacy, pairisvrc01class=False, s=None, t=None, m=None, ch="heavy"):
     if seq is None:
-        return [''] * 34
+        if ch == "heavy":
+            return [''] * 34
+        else:
+            return [''] * 30
     line = []
     line.append(seq.fraction)
     line.append(seq.confidence)
